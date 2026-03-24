@@ -59,18 +59,48 @@ def detect_and_read_csv(file_bytes: bytes) -> pd.DataFrame:
 
     for enc in encodings:
         try:
-            df = pd.read_csv(
-                io.BytesIO(file_bytes),
-                encoding=enc,
-                dtype=str,
-                keep_default_na=False,
-            )
-            log.info(f"Read CSV with encoding={enc}, rows={len(df)}")
+            df = _try_read_csv(file_bytes, enc)
+            log.info(f"Read CSV with encoding={enc}, rows={len(df)}, cols={len(df.columns)}")
             return df
         except (UnicodeDecodeError, LookupError):
             continue
+        except Exception as e:
+            log.warning(f"Encoding {enc} failed: {e}")
+            continue
 
     raise ValueError(f"Cannot decode CSV with any encoding: {encodings}")
+
+
+def _try_read_csv(file_bytes: bytes, enc: str) -> pd.DataFrame:
+    """
+    Read CSV, auto-detecting if row 0 is a metadata/title row.
+    If row 0 has far fewer columns than row 1, skip it (skiprows=1).
+    """
+    import csv as csv_module
+
+    # Quick scan: count columns in first 2 rows
+    text = file_bytes.decode(enc, errors="replace")
+    reader = csv_module.reader(io.StringIO(text))
+    rows = []
+    for i, row in enumerate(reader):
+        rows.append(len(row))
+        if i >= 2:
+            break
+
+    skip = 0
+    if len(rows) >= 2 and rows[0] < rows[1] / 2:
+        # Row 0 is a metadata/title row — skip it
+        skip = 1
+        log.info(f"Detected metadata row 0 (cols={rows[0]} vs row1 cols={rows[1]}), using skiprows=1")
+
+    df = pd.read_csv(
+        io.BytesIO(file_bytes),
+        encoding=enc,
+        dtype=str,
+        keep_default_na=False,
+        skiprows=skip,
+    )
+    return df
 
 
 def df_to_xlsx_bytes(df: pd.DataFrame) -> bytes:
