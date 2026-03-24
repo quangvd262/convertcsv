@@ -24,11 +24,18 @@ app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-in-prod")
 # Max upload size: 10 MB
 app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024
 
-ENCODING_FALLBACKS = ["utf-8-sig", "utf-8", "shift-jis", "cp932", "latin-1"]
+ENCODING_FALLBACKS = ["utf-8-sig", "utf-8", "cp932", "shift-jis", "latin-1"]
 CHARDET_MIN_CONFIDENCE = 0.7
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
+
+
+ENCODING_MAP = {
+    "shift_jis": "cp932",
+    "shift-jis": "cp932",
+    "shiftjis": "cp932",
+}
 
 
 def detect_and_read_csv(file_bytes: bytes) -> pd.DataFrame:
@@ -36,6 +43,10 @@ def detect_and_read_csv(file_bytes: bytes) -> pd.DataFrame:
     result = chardet.detect(file_bytes)
     detected = result.get("encoding")
     confidence = result.get("confidence", 0)
+
+    # Map shift-jis variants to cp932 (superset, handles more Japanese chars)
+    if detected:
+        detected = ENCODING_MAP.get(detected.lower(), detected)
 
     encodings = []
     if detected and confidence >= CHARDET_MIN_CONFIDENCE:
